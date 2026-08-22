@@ -1,0 +1,9 @@
+{
+  "version": "20260822-193536",
+  "sourceSha": "7a2768d",
+  "note": "",
+  "changes": "- docs: write down the author-one-quadrant rule and its two traps\n\tCLAUDE.md\n- test(sim): pin terrain symmetry and that no camp is walled in\n\tSim.Tests/Program.cs\n- feat(sim): give the jungle thickets, banks and brush to hide in\n\tUnityProject/Assets/Scripts/Sim/World/MapData.cs\n- fix(sim): make the side fronts' gank entrances mirror left to right\n\tUnityProject/Assets/Scripts/Sim/World/MapData.cs\n- docs(skill): stop the ship skill teaching note-writing\n\t.claude/skills/ship/SKILL.md\n\tUnityProject/ProjectSettings/ProjectSettings.asset\n\tdocs/PLAYTESTS.md",
+  "range": "9eec123..7a2768d",
+  "sizeMb": "9",
+  "builtAt": "2026-08-22T19:36:54Z"
+}

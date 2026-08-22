@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <title>WAR dev</title>
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0b0e14">
+    <!-- Home-screen install. Files are copied in by tools/ship.sh, not shipped through
+         Assets/ — Unity would import the PNGs as textures and skip the manifest. -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="dev-apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="dev-icon-192.png">
+    <style>
+      html, body {
+        margin: 0; padding: 0; height: 100%; width: 100%;
+        background: #0b0e14; color: #cfd6e4; overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        overscroll-behavior: none;
+        -webkit-user-select: none; user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      /* Inset by the notch, the Dynamic Island and the home indicator.
+         Unity cannot do this itself: Screen.safeArea reports the whole screen in a WebGL
+         build, so SafeArea.cs insets nothing and the HUD ran under the black bar.
+
+         The insets go on this wrapper, never on the canvas. A canvas is a replaced element,
+         so width:auto resolves from its intrinsic size — the width attribute Unity rewrites
+         every frame to match the element. Setting it fed the buffer size back into the
+         layout size, which grew both without bound until iOS Safari killed the tab. */
+      #stage {
+        position: fixed;
+        top: env(safe-area-inset-top); bottom: env(safe-area-inset-bottom);
+        left: env(safe-area-inset-left); right: env(safe-area-inset-right);
+      }
+      #unity-canvas {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        display: block; background: #0b0e14;
+        touch-action: none;   /* browser must not steal drags from the joystick */
+      }
+      #overlay {
+        position: fixed; inset: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 18px;
+        background: #0b0e14; z-index: 10; text-align: center; padding: 24px;
+      }
+      #title { font-size: 34px; font-weight: 700; letter-spacing: 6px; color: #e8eefc; }
+      #sub { font-size: 13px; opacity: .55; letter-spacing: 1px; }
+      #bar { width: min(260px, 60vw); height: 4px; border-radius: 2px; background: #1d2432; overflow: hidden; }
+      #bar > div { height: 100%; width: 0%; background: #4a8cff; transition: width .15s linear; }
+      #rotate {
+        position: fixed; inset: 0; display: none; z-index: 20;
+        align-items: center; justify-content: center; background: #0b0e14;
+        font-size: 18px; letter-spacing: 2px;
+      }
+      body.portrait #rotate { display: flex; }
+      #update {
+        position: fixed; z-index: 30; display: none; cursor: pointer;
+        left: 50%; transform: translateX(-50%);
+        bottom: calc(12px + env(safe-area-inset-bottom));
+        padding: 10px 20px; border-radius: 999px;
+        background: #4a8cff; color: #fff; font-size: 14px; font-weight: 600;
+        box-shadow: 0 4px 16px rgba(0,0,0,.45);
+      }
+      /* Bottom-left is the one edge free on the loading and hero-select screens. During a
+         match the in-game button takes over, because every corner belongs to the HUD —
+         the minimap alone covers the top-left down to half the screen on a phone. */
+      #report {
+        position: fixed; z-index: 30; display: none; cursor: pointer;
+        bottom: calc(12px + env(safe-area-inset-bottom));
+        left: calc(12px + env(safe-area-inset-left));
+        padding: 9px 15px; border-radius: 999px;
+        background: rgba(58,42,16,.92); border: 1px solid rgba(255,179,71,.45);
+        color: #ffb347; font-size: 13px; font-weight: 600; letter-spacing: .4px;
+      }
+      body.can-report #report { display: block; }
+      body.in-match #report { display: none; }
+      #report-sheet {
+        position: fixed; inset: 0; z-index: 40; display: none;
+        align-items: center; justify-content: center;
+        background: rgba(6,9,15,.82); padding: 20px;
+      }
+      body.reporting #report-sheet { display: flex; }
+      #report-card {
+        width: min(420px, 100%); background: #131824; border-radius: 14px;
+        padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.6);
+      }
+      #report-card h3 { margin: 0 0 4px; font-size: 16px; color: #e8eefc; font-weight: 600; }
+      #report-card p { margin: 0 0 12px; font-size: 12px; opacity: .5; }
+      #report-text {
+        width: 100%; box-sizing: border-box; height: 96px; resize: none;
+        background: #0b0e14; border: 1px solid #232c3e; border-radius: 8px;
+        color: #cfd6e4; font: inherit; font-size: 14px; padding: 10px;
+        -webkit-user-select: text; user-select: text;
+      }
+      #report-row { display: flex; gap: 8px; margin-top: 12px; }
+      #report-row button {
+        flex: 1; padding: 11px; border: 0; border-radius: 8px;
+        font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+      }
+      #report-cancel { background: #202839; color: #9fabc2; }
+      #report-send { background: #4a8cff; color: #fff; }
+      #report-send[disabled] { opacity: .5; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"><canvas id="unity-canvas" tabindex="-1"></canvas></div>
+
+    <div id="overlay">
+      <div id="title">WAR dev</div>
+      <div id="bar"><div id="fill"></div></div>
+      <div id="sub">loading</div>
+    </div>
+    <div id="rotate">↻&nbsp; turn your phone sideways</div>
+    <div id="update" onclick="location.reload()">new build available &nbsp;·&nbsp; tap to update</div>
+
+    <div id="report" title="Report something">⚑&nbsp; Report</div>
+    <div id="report-sheet">
+      <div id="report-card">
+        <h3>What happened?</h3>
+        <p>Goes straight to Discord with your match seed attached.</p>
+        <textarea id="report-text" placeholder="tower did nothing when I hit it&#10;ult felt way too strong&#10;froze at ~8 min"></textarea>
+        <div id="report-row">
+          <button id="report-cancel">Cancel</button>
+          <button id="report-send">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      var canvas  = document.querySelector("#unity-canvas");
+      var overlay = document.querySelector("#overlay");
+      var fill    = document.querySelector("#fill");
+      var sub     = document.querySelector("#sub");
+      var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+                     || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform));
+
+      function checkOrientation() {
+        document.body.classList.toggle("portrait", isMobile && window.innerHeight > window.innerWidth);
+      }
+      window.addEventListener("resize", checkOrientation);
+      window.addEventListener("orientationchange", checkOrientation);
+      checkOrientation();
+
+      // Safari pinch-zooms the page otherwise, which fights the joystick.
+      document.addEventListener("gesturestart", function (e) { e.preventDefault(); }, { passive: false });
+      document.addEventListener("dblclick", function (e) { e.preventDefault(); }, { passive: false });
+
+      // A game canvas does not count as activity to the OS the way video does, so the phone
+      // dims and locks mid-match. The lock is dropped whenever the page is backgrounded and
+      // has to be taken again on the way back.
+      var wakeLock = null;
+      function keepAwake() {
+        if (!("wakeLock" in navigator) || document.visibilityState !== "visible") return;
+        navigator.wakeLock.request("screen").then(function (lock) {
+          wakeLock = lock;
+          lock.addEventListener("release", function () { wakeLock = null; });
+        }).catch(function () { /* denied or unsupported; nothing to fall back to */ });
+      }
+      document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "visible" && !wakeLock) keepAwake();
+      });
+      // Safari only grants it off a user gesture, so ask again on the first touch.
+      document.addEventListener("pointerdown", function () { if (!wakeLock) keepAwake(); });
+      keepAwake();
+
+      // Stamped fresh every build. Appended to each asset URL so a reload is guaranteed to
+      // fetch the new build rather than whatever the browser or Unity's IndexedDB kept.
+      var BUILD = "20260822-193536";
+      var bust = "?v=" + encodeURIComponent(BUILD);
+
+      var buildUrl = "Build";
+      var config = {
+        arguments: [],
+        dataUrl: buildUrl + "/Web.data.unityweb" + bust,
+        frameworkUrl: buildUrl + "/Web.framework.js.unityweb" + bust,
+        codeUrl: buildUrl + "/Web.wasm.unityweb" + bust,
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "Suhas Kasireddy",
+        productName: "WAR",
+        productVersion: "20260822-193536",
+        // Phones are 3x DPI; rendering every one of those pixels costs more than it shows.
+        devicePixelRatio: isMobile ? Math.min(window.devicePixelRatio || 1, 2) : (window.devicePixelRatio || 1),
+      };
+
+      // Nothing running inside the wasm can replace the wasm, so a new deploy needs a page
+      // reload. Offered rather than forced: reloading mid-fight would be worse than stale.
+      function watchForNewBuild() {
+        setInterval(function () {
+          fetch("version.json?t=" + Date.now(), { cache: "no-store" })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (v) {
+              if (!v || v.version === BUILD) return;
+              var bar = document.getElementById("update");
+              if (bar) bar.style.display = "block";
+            })
+            .catch(function () { /* offline; try again next tick */ });
+        }, 60000);
+      }
+
+      // Feedback used to POST straight to a Discord webhook whose URL was published in
+      // playtest.json. A static site cannot keep a secret: the file is world-readable, a
+      // scraper found it, and #war-feedback filled up with Telegram adverts posted through
+      // it. Anything the browser can send with, anyone can send with.
+      //
+      // So the browser no longer holds a credential. It formats the report, puts it on the
+      // clipboard, and opens the channel for the player to paste into. One extra tap, and
+      // nothing worth stealing ships with the build. playtest.json now carries only a
+      // channel link, which is useless to anyone who is not already in the server.
+      var lastError = "";
+      window.addEventListener("error", function (e) {
+        lastError = String(e.message || "").slice(0, 300);
+      });
+
+      // Deliberately set up before Unity loads: a build that fails to start is exactly the
+      // one you most need a report about.
+      // A 90-character user-agent buried the actual comment. Only the phone and OS matter.
+      function shortDevice() {
+        var ua = navigator.userAgent;
+        var os = (ua.match(/(?:iPhone )?OS (\d+[._]\d+)/) || [])[1];
+        if (/iPad/.test(ua))    return "iPad" + (os ? " " + os.replace("_", ".") : "");
+        if (/iPhone/.test(ua))  return "iPhone" + (os ? " " + os.replace("_", ".") : "");
+        if (/Android/.test(ua)) return "Android" + ((ua.match(/Android (\d+(?:\.\d+)?)/) || [])[1] || "");
+        if (/Mac/.test(ua))     return "Mac";
+        if (/Windows/.test(ua)) return "Windows";
+        return "desktop";
+      }
+
+      function setupFeedback() {
+        var sheet  = document.getElementById("report-sheet");
+        var text   = document.getElementById("report-text");
+        var send   = document.getElementById("report-send");
+        var cancel = document.getElementById("report-cancel");
+        var channelUrl = "";
+        var relayUrl = "";
+
+        fetch("playtest.json?t=" + Date.now(), { cache: "no-store" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (cfg) {
+            if (!cfg) return;
+            channelUrl = cfg.feedbackUrl || "";
+            relayUrl = cfg.feedbackApi || "";
+            // Either route is enough to show the button. The relay is one tap; the channel
+            // link is the paste fallback, and one of them has to exist for the button to
+            // do anything at all.
+            if (channelUrl || relayUrl) document.body.classList.add("can-report");
+          })
+          .catch(function () { /* no config published; button stays hidden */ });
+
+        // Clipboard access needs a secure context. The published build is https so the
+        // modern call works there; the wifi preview is plain http, where it does not, and
+        // the old execCommand path still does. If both fail the text stays in the box and
+        // the player copies it themselves — the report is never lost, only less convenient.
+        function copyText(value) {
+          if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(value);
+          }
+          return new Promise(function (resolve, reject) {
+            var scratch = document.createElement("textarea");
+            scratch.value = value;
+            scratch.setAttribute("readonly", "");
+            scratch.style.position = "fixed";
+            scratch.style.opacity = "0";
+            document.body.appendChild(scratch);
+            scratch.select();
+            scratch.setSelectionRange(0, value.length);
+            var ok = false;
+            try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+            document.body.removeChild(scratch);
+            ok ? resolve() : reject(new Error("copy unavailable"));
+          });
+        }
+
+        function close() {
+          document.body.classList.remove("reporting");
+          send.disabled = false;
+          send.textContent = "Send";
+        }
+
+        // Deliberately no focus() — autofocusing throws the on-screen keyboard over the
+        // sheet before the reader has seen it. The keyboard comes up when they tap the box.
+        function open() {
+          text.value = "";
+          document.body.classList.add("reporting");
+        }
+        window.warOpenReport = open;   // called from Unity's in-game report button
+
+        document.getElementById("report").addEventListener("click", open);
+
+        // Unity publishes match context every few seconds; while a match is live its own
+        // button is on screen, so the page one steps aside rather than double up.
+        setInterval(function () {
+          var ctx = window.warContext;
+          document.body.classList.toggle("in-match", !!(ctx && ctx.seed && !ctx.over));
+        }, 2000);
+        cancel.addEventListener("click", close);
+        sheet.addEventListener("click", function (e) { if (e.target === sheet) close(); });
+
+        send.addEventListener("click", function () {
+          var body = text.value.trim();
+          if (!body) return close();
+
+          var ctx = window.warContext || {};
+          var fields = {
+            comment: body,
+            champion: ctx.champion || "",
+            matchTime: ctx.gameTime
+              ? Math.floor(ctx.gameTime / 60) + "m" + (ctx.gameTime % 60) + "s" : "",
+            autoplay: !!ctx.autoplay,
+            over: !!ctx.over,
+            seed: ctx.seed || "",
+            build: BUILD,
+            device: shortDevice(),
+            error: lastError || "",
+          };
+
+          send.disabled = true;
+
+          // One tap when the relay is up. It holds the webhook; this page holds nothing.
+          if (relayUrl) {
+            send.textContent = "Sending…";
+            fetch(relayUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(fields),
+            })
+              .then(function (r) {
+                if (!r.ok) throw new Error(r.status);
+                send.textContent = "Sent — thanks";
+                setTimeout(close, 900);
+              })
+              .catch(function () { pasteFallback(fields); });
+            return;
+          }
+
+          pasteFallback(fields);
+        });
+
+        // Relay down, relay unconfigured, or offline. The report is never lost to a
+        // service being unreachable — it goes on the clipboard and the channel opens.
+        function pasteFallback(fields) {
+          if (!channelUrl) {
+            send.disabled = false;
+            send.textContent = "Could not send — try again later";
+            return;
+          }
+
+          var meta = [
+            fields.champion, fields.matchTime,
+            fields.autoplay ? "autoplay" : "", fields.over ? "match over" : "",
+            "seed " + (fields.seed || "—"), fields.build, fields.device,
+          ].filter(Boolean);
+
+          var report = fields.comment + "\n-# " + meta.join("  ·  ");
+          if (fields.error) report += "\n`" + fields.error + "`";
+
+          copyText(report)
+            .then(function () {
+              send.textContent = "Copied — paste it in Discord";
+              window.open(channelUrl, "_blank", "noopener");
+              setTimeout(close, 1200);
+            })
+            .catch(function () {
+              send.disabled = false;
+              send.textContent = "Copy it yourself, then paste in Discord";
+              text.value = report;
+              text.focus();
+              text.setSelectionRange(0, report.length);
+            });
+        }
+      }
+      setupFeedback();
+
+      var script = document.createElement("script");
+      script.src = buildUrl + "/Web.loader.js" + bust;
+      script.onload = function () {
+        createUnityInstance(canvas, config, function (progress) {
+          fill.style.width = (100 * progress) + "%";
+        }).then(function (unityInstance) {
+          overlay.style.display = "none";
+          window.unityInstance = unityInstance;
+          watchForNewBuild();
+        }).catch(function (message) {
+          sub.textContent = message;
+        });
+      };
+      document.body.appendChild(script);
+    </script>
+  <div id="devbadge">WAR dev &middot; 20260822-193536</div>
+<style>
+#devbadge {
+  position: fixed; left: 50%; bottom: 2px; transform: translateX(-50%);
+  z-index: 2147483647; pointer-events: none;
+  font: 500 10px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .08em; color: #e8b64c; background: rgba(0,0,0,.55);
+  padding: 2px 8px; border-radius: 6px; white-space: nowrap;
+}
+</style>
+</body>
+</html>
