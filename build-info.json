@@ -1,0 +1,9 @@
+{
+  "version": "20260905-030814",
+  "sourceSha": "39d857d",
+  "note": "",
+  "changes": "- chore: stamp the dev build\n\tUnityProject/ProjectSettings/ProjectSettings.asset\n- fix(match): give your pick to the side you march on\n\tUnityProject/Assets/Scripts/Game/MatchRunner.cs\n- chore: stamp the dev build\n\tUnityProject/ProjectSettings/ProjectSettings.asset\n- feat(home): one march, which queues and falls back to Echoes\n\tUnityProject/Assets/Scripts/Game/HomeView.cs\n\tUnityProject/Assets/Scripts/Game/MatchRunner.cs\n- fix(ui): name a match side by whose it is, not by its colour\n\tUnityProject/Assets/Scripts/Game/KillFeedView.cs\n\tUnityProject/Assets/Scripts/Game/MatchView.cs\n- fix(war): score the border by win rate, not win count\n\ttools/accounts-worker/src/worker.js\n\ttools/accounts-worker/test.mjs\n- chore: stamp the dev build\n\tUnityProject/ProjectSettings/ProjectSettings.asset\n- feat(match): march under the banner you swore to\n\tUnityProject/Assets/Scripts/Game/MatchRunner.cs\n\tUnityProject/Assets/Scripts/Game/ProfileValues.cs\n- docs: the interpose figures do not test the threat rule\n\tCLAUDE.md\n\tUnityProject/Assets/Scripts/Sim/World/WorldSquad.cs\n- docs: ask whether a test calls the rule or restates it\n\tCLAUDE.md\n\tUnityProject/Assets/Scripts/Sim/World/WorldSquad.cs\n- test(net): make the resume guard call the rule, not copy it\n\tSim.Tests/Program.cs\n- chore: log the build that pooled the projectiles\n\tUnityProject/ProjectSettings/ProjectSettings.asset\n\tdocs/PLAYTESTS.md\n- refactor(net): put the resume cursor where a test can run it\n\tSim.Tests/Program.cs\n\tUnityProject/Assets/Scripts/Game/MatchNet.cs\n\tUnityProject/Assets/Scripts/Sim/Net/LockstepClock.cs",
+  "range": "fb690cf..39d857d",
+  "sizeMb": "9",
+  "builtAt": "2026-09-05T03:14:55Z"
+}
