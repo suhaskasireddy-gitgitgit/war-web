@@ -1,0 +1,9 @@
+{
+  "version": "20260911-230805",
+  "sourceSha": "354e618-dirty",
+  "note": "",
+  "changes": "- feat(draft): name who is in the room, beside the seats\n\tUnityProject/Assets/Scripts/Game/HeroSelectView.cs\n\tUnityProject/Assets/Scripts/Game/MatchRunner.cs\n\tdocs/REVIEW.md\n- feat(scoreboard): name who was behind each hero\n\tUnityProject/Assets/Scripts/Game/FinalScoreboard.cs\n\tUnityProject/Assets/Scripts/Game/Hud.cs\n\tUnityProject/Assets/Scripts/Game/MatchRunner.cs\n\tdocs/REVIEW.md\n- feat(scoreboard): take the whole screen, and give the score a column\n\tUnityProject/Assets/Scripts/Game/FinalScoreboard.cs\n\tUnityProject/Assets/Scripts/Game/MatchRunner.cs\n\tdocs/REVIEW.md\n- feat(scoreboard): put the match score back on the row\n\tUnityProject/Assets/Scripts/Game/FinalScoreboard.cs\n\tdocs/REVIEW.md\n- feat(net): carry who is in a seat, outside the simulation\n\tGame.Tests/Program.cs\n\tUnityProject/Assets/Scripts/Game/MatchNet.cs\n\tUnityProject/Assets/Scripts/Game/RelayMessage.cs\n\ttools/match-relay/src/worker.js\n\ttools/match-relay/test.mjs\n- chore: log the build that shipped the heroes screen and banners\n\tUnityProject/ProjectSettings/ProjectSettings.asset\n\tdocs/PLAYTESTS.md",
+  "range": "ca2272f..354e618-dirty",
+  "sizeMb": "9",
+  "builtAt": "2026-09-11T23:08:16Z"
+}
