@@ -1,0 +1,9 @@
+{
+  "version": "20261002-163542",
+  "sourceSha": "d474223-dirty",
+  "note": "",
+  "changes": "- docs: record squads switched off and the measured effect\n\tCLAUDE.md\n- feat(hud): hide troop chips and scout button when squads are off\n\tUnityProject/Assets/Scripts/Game/MatchRunner.cs\n\tUnityProject/Assets/Scripts/Game/SquadPanel.cs\n- feat(sim): turn squads off by default\n\tSim.Tests/Program.cs\n\tUnityProject/Assets/Scripts/Sim/World/World.cs\n- chore: log the build that shipped the cave and cage rework\n\tUnityProject/ProjectSettings/ProjectSettings.asset\n\tdocs/PLAYTESTS.md",
+  "range": "3e90fd9..d474223-dirty",
+  "sizeMb": "9",
+  "builtAt": "2026-10-02T16:37:01Z"
+}
