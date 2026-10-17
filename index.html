@@ -1,0 +1,1389 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <title>WAR</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0b0e14">
+    <!-- Home-screen install. Files are copied in by tools/ship.sh, not shipped through
+         Assets/ — Unity would import the PNGs as textures and skip the manifest. -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <style>
+      html, body {
+        margin: 0; padding: 0; height: 100%; width: 100%;
+        background: #0b0e14; color: #cfd6e4; overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        overscroll-behavior: none;
+        -webkit-user-select: none; user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      /* Inset by the notch, the Dynamic Island and the home indicator.
+         Unity cannot do this itself: Screen.safeArea reports the whole screen in a WebGL
+         build, so SafeArea.cs insets nothing and the HUD ran under the black bar.
+
+         The insets go on this wrapper, never on the canvas. A canvas is a replaced element,
+         so width:auto resolves from its intrinsic size — the width attribute Unity rewrites
+         every frame to match the element. Setting it fed the buffer size back into the
+         layout size, which grew both without bound until iOS Safari killed the tab. */
+      /* Edge to edge now (2026-10-15): the inset wrapper left the notch and home bar as dead
+         strips. The game insets its own chrome instead, from WarSafeInset, which reads the
+         same env() values off #safe-probe. Insets still never go on the canvas itself. */
+      #stage { position: fixed; top: 0; bottom: 0; left: 0; right: 0; }
+      #safe-probe {
+        position: fixed; visibility: hidden; pointer-events: none;
+        top: env(safe-area-inset-top); bottom: env(safe-area-inset-bottom);
+        left: env(safe-area-inset-left); right: env(safe-area-inset-right);
+      }
+      /* The page hands the game focus for the keyboard; a phone drew its focus ring round it. */
+      #unity-canvas:focus { outline: none; }
+      /* At work: dim, quiet colours. The sound half is in the script. */
+      body.at-work #unity-canvas { filter: brightness(0.5) saturate(0.45); }
+      /* The at-work switches, made only on dev and local builds on a computer. Faint until pointed at. */
+      #devswitch { position: fixed; z-index: 2147483647; display: flex; gap: 4px; }
+      #devswitch button {
+        width: 22px; height: 22px; padding: 0; display: grid; place-items: center; cursor: pointer;
+        border-radius: 50%; border: 1px solid transparent; background: rgba(7,9,8,.82);
+        color: #8a8576; opacity: .55; transition: opacity .15s, color .15s;
+      }
+      #devswitch:hover button, #devswitch button:focus-visible { opacity: 1; }
+      /* Lit only while a switch is changing something: dimmed, or muted. */
+      #devswitch button.on { color: #ffb833; border-color: rgba(255,184,51,.45); }
+      #devswitch svg { width: 13px; height: 13px; }
+      #devswitch .cross, #devswitch .muted .wave { display: none; }
+      #devswitch .muted .cross { display: inline; }
+      #unity-canvas {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        display: block; background: #0b0e14;
+        touch-action: none;   /* browser must not steal drags from the joystick */
+      }
+      #overlay {
+        position: fixed; inset: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 18px;
+        background: #0b0e14; z-index: 10; text-align: center; padding: 24px;
+      }
+      #title { font-size: 34px; font-weight: 700; letter-spacing: 6px; color: #e8eefc; }
+      #sub { font-size: 13px; opacity: .55; letter-spacing: 1px; }
+      #bar { width: min(260px, 60vw); height: 4px; border-radius: 2px; background: #1d2432; overflow: hidden; }
+      #bar > div { height: 100%; width: 0%; background: #4a8cff; transition: width .15s linear; }
+      /* An upright phone is asked to turn, as a native MOBA locks to landscape. Above every sheet.
+         The face is Cinzel, home's serif, cut down to the letters of the one line it sets. */
+      @font-face { font-family: "WarTurn"; src: url(data:font/woff2;base64,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) format("woff2"); }
+      #turn {
+        position: fixed; inset: 0; z-index: 2147483646; display: none;
+        flex-direction: column; align-items: center; justify-content: center; gap: 26px;
+        background: radial-gradient(circle at 50% 42%, #1a1608 0, #0b0e14 58%); background-color: #0b0e14;
+        text-align: center; touch-action: none;
+      }
+      html.upright #turn { display: flex; }
+      #turn .mark { width: 168px; height: 168px; }
+      #turn .phone { width: 52px; height: 52px; color: #ffc740; }
+      #turn .phone g { transform-origin: 26px 26px; animation: turn-phone 3.2s ease-in-out infinite; }
+      @keyframes turn-phone {
+        0%, 18% { transform: rotate(0deg); }
+        42%, 78% { transform: rotate(90deg); }
+        100% { transform: rotate(0deg); }
+      }
+      #turn p {
+        margin: 0; font: 19px/1.2 "WarTurn", Georgia, serif; letter-spacing: 2px; color: #efe2b8;
+      }
+      @media (prefers-reduced-motion: reduce) { #turn .phone g { animation: none; transform: rotate(90deg); } }
+      #update {
+        position: fixed; z-index: 30; display: none; cursor: pointer;
+        left: 50%; transform: translateX(-50%);
+        bottom: calc(12px + env(safe-area-inset-bottom));
+        padding: 10px 20px; border-radius: 999px;
+        background: #4a8cff; color: #fff; font-size: 14px; font-weight: 600;
+        box-shadow: 0 4px 16px rgba(0,0,0,.45);
+      }
+      /* Online play on an old build is refused, not merely discouraged: every player runs the
+         match themselves, so two builds in one match play two different games. */
+      #outdated {
+        position: fixed; inset: 0; z-index: 40; display: none;
+        align-items: center; justify-content: center; flex-direction: column; gap: 18px;
+        background: rgba(10,12,16,.92); color: #fff; text-align: center; padding: 24px;
+      }
+      #outdated h2 { font-size: 22px; margin: 0; }
+      #outdated p { font-size: 15px; color: #c9cdd6; margin: 0; max-width: 340px; }
+      #outdated button {
+        padding: 12px 28px; border: 0; border-radius: 999px; cursor: pointer;
+        background: #4a8cff; color: #fff; font-size: 16px; font-weight: 700;
+      }
+      /* Bottom-left is the one edge free on the loading and hero-select screens. During a
+         match the in-game button takes over, because every corner belongs to the HUD —
+         the minimap alone covers the top-left down to half the screen on a phone. */
+      #report {
+        position: fixed; z-index: 30; display: none; cursor: pointer;
+        /* Above the game's own bottom rail, not on top of it. The rail is the whole of the
+           chrome on the home screen and it runs to the left edge; a page chip squatting in
+           that corner pushed the first nav word inboard to dodge it. */
+        bottom: calc(64px + env(safe-area-inset-bottom));
+        left: calc(12px + env(safe-area-inset-left));
+        /* A flag in a disc, not a labelled chip. The word doubled the width of a control
+           nobody looks for until they need it, and it sat over the lobby's own corner. */
+        width: 34px; height: 34px; border-radius: 999px;
+        display: none; place-items: center;
+        background: rgba(58,42,16,.92); border: 1px solid rgba(255,179,71,.55);
+        color: #ffb347; font-size: 16px; line-height: 1;
+      }
+      #report:hover { background: rgba(84,60,20,.96); border-color: #ffb347; }
+      body.can-report #report { display: grid; }
+      body.in-match #report { display: none; }
+      #report-sheet {
+        position: fixed; inset: 0; z-index: 40; display: none;
+        align-items: center; justify-content: center;
+        background: rgba(6,9,15,.82); padding: 20px;
+      }
+      body.reporting #report-sheet { display: flex; }
+      #report-card {
+        width: min(420px, 100%); background: #131824; border-radius: 14px;
+        padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.6);
+      }
+      #report-card h3 { margin: 0 0 4px; font-size: 16px; color: #e8eefc; font-weight: 600; }
+      #report-card p { margin: 0 0 12px; font-size: 12px; opacity: .5; }
+      #report-text {
+        width: 100%; box-sizing: border-box; height: 96px; resize: none;
+        background: #0b0e14; border: 1px solid #232c3e; border-radius: 8px;
+        color: #cfd6e4; font: inherit; font-size: 14px; padding: 10px;
+        -webkit-user-select: text; user-select: text;
+      }
+      #report-row { display: flex; gap: 8px; margin-top: 12px; }
+      #report-row button {
+        flex: 1; padding: 11px; border: 0; border-radius: 8px;
+        font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+      }
+      #report-cancel { background: #202839; color: #9fabc2; }
+      #report-send { background: #4a8cff; color: #fff; }
+      #report-send[disabled] { opacity: .5; }
+
+      /* One text field over the canvas, which is the only way a phone gets a keyboard here —
+         the WebGL player has no TouchScreenKeyboard at all. Named for the name sheet because
+         that was its first caller; it now serves any single-field question the game asks, so
+         its words are set per open rather than written in the markup. */
+      #name-sheet {
+        position: fixed; inset: 0; z-index: 41; display: none;
+        align-items: center; justify-content: center;
+        background: rgba(6,9,15,.82); padding: 20px;
+      }
+      body.naming #name-sheet { display: flex; }
+      #name-card {
+        width: min(420px, 100%); background: #131824; border-radius: 14px;
+        padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.6);
+      }
+      #name-card h3 { margin: 0 0 4px; font-size: 16px; color: #e8eefc; font-weight: 600; }
+      #name-card p { margin: 0 0 12px; font-size: 12px; opacity: .5; }
+      #name-input {
+        width: 100%; box-sizing: border-box;
+        background: #0b0e14; border: 1px solid #232c3e; border-radius: 8px;
+        color: #e8eefc; font: inherit; font-size: 18px; padding: 12px;
+        -webkit-user-select: text; user-select: text;
+      }
+      #name-row { display: flex; gap: 8px; margin-top: 12px; }
+      #name-row button {
+        flex: 1; padding: 11px; border: 0; border-radius: 8px;
+        font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+      }
+      #name-cancel { background: #202839; color: #9fabc2; }
+      #name-save { background: #4a8cff; color: #fff; }
+
+      /* Add to home screen. A phone in a browser tab loses a fifth of its height to the
+         address bar and cannot hold landscape; installed, the game runs full screen. */
+      #install-sheet {
+        position: fixed; inset: 0; z-index: 39; display: none;
+        align-items: center; justify-content: center;
+        background: rgba(6,9,15,.82); padding: 12px;
+      }
+      body.installing #install-sheet { display: flex; }
+      #install-card {
+        width: min(460px, 100%); max-height: 100%; overflow: auto; box-sizing: border-box;
+        background: #131824; border-radius: 14px; padding: 16px 18px;
+        box-shadow: 0 12px 40px rgba(0,0,0,.6);
+      }
+      #install-card h3 { margin: 0 0 4px; font-size: 17px; color: #e8eefc; font-weight: 600; }
+      #install-card .why { margin: 0 0 10px; font-size: 13px; color: #9fabc2; }
+      #install-steps { margin: 0; padding-left: 22px; color: #e8eefc; font-size: 15px; line-height: 1.5; }
+      #install-steps b { color: #ffb347; font-weight: 600; }
+      #install-row { display: flex; gap: 8px; margin-top: 14px; }
+      #install-row button {
+        flex: 1; padding: 11px; border: 0; border-radius: 8px;
+        font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+      }
+      #install-later { background: #202839; color: #9fabc2; }
+      #install-done, #install-now { background: #4a8cff; color: #fff; }
+      #install-now { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"><canvas id="unity-canvas" tabindex="-1"></canvas></div>
+    <div id="turn">
+      <svg class="mark" viewBox="0 0 200 200" aria-hidden="true">
+        <g fill="none" stroke="#c9a24a" stroke-width="1.6">
+          <circle cx="100" cy="100" r="80" opacity=".18"/>
+          <circle cx="100" cy="100" r="62" opacity=".32"/>
+          <circle cx="100" cy="100" r="44" opacity=".55"/>
+        </g>
+        <path d="M54 20.3A92 92 0 0 0 54 179.7" fill="none" stroke="#5b8fe0" stroke-width="2" stroke-linecap="round" opacity=".85"/>
+        <path d="M146 20.3A92 92 0 0 1 146 179.7" fill="none" stroke="#d9605a" stroke-width="2" stroke-linecap="round" opacity=".85"/>
+        <g fill="#e2b453">
+          <path d="M96.5 63h7L100 154z"/>
+          <rect x="84" y="57" width="32" height="5" rx="1"/>
+          <rect x="98" y="44" width="4" height="13" fill="#9c8650"/>
+          <circle cx="100" cy="40" r="5"/>
+        </g>
+      </svg>
+      <svg class="phone" viewBox="0 0 52 52" aria-hidden="true">
+        <g>
+          <rect x="16" y="6" width="20" height="40" rx="4" fill="none" stroke="currentColor" stroke-width="2"/>
+          <rect x="22.5" y="9" width="7" height="2" rx="1" fill="currentColor"/>
+        </g>
+      </svg>
+      <p>Turn your phone sideways</p>
+    </div>
+    <div id="safe-probe"></div>
+
+    <div id="overlay">
+      <div id="title">WAR</div>
+      <div id="bar"><div id="fill"></div></div>
+      <div id="sub">loading</div>
+    </div>
+    <div id="update" onclick="location.reload()">new build available &nbsp;·&nbsp; tap to update</div>
+    <div id="outdated">
+      <h2>A new version is out</h2>
+      <p>Reload to keep playing online. Everyone in a match has to be on the same version.</p>
+      <button onclick="location.reload()">Reload</button>
+    </div>
+
+    <div id="report" title="Report something" aria-label="Report something">⚑</div>
+    <div id="report-sheet">
+      <div id="report-card">
+        <h3>What happened?</h3>
+        <p>Goes straight to Discord with your match seed attached.</p>
+        <textarea id="report-text" placeholder="tower did nothing when I hit it&#10;ult felt way too strong&#10;froze at ~8 min"></textarea>
+        <div id="report-row">
+          <button id="report-cancel">Cancel</button>
+          <button id="report-send">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="name-sheet">
+      <div id="name-card">
+        <h3>Your name</h3>
+        <p>Shown on your profile. Letters, numbers, up to 16 characters.</p>
+        <input id="name-input" type="text" maxlength="16" autocomplete="off"
+               autocapitalize="words" autocorrect="off" spellcheck="false"
+               enterkeyhint="done">
+        <div id="name-row">
+          <button id="name-cancel">Cancel</button>
+          <button id="name-save">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="install-sheet">
+      <div id="install-card">
+        <h3 id="install-title">Add WAR to your home screen</h3>
+        <p class="why">It opens full screen like an app, with no browser bar in the way.</p>
+        <ol id="install-steps"></ol>
+        <div id="install-row">
+          <button id="install-later">Not now</button>
+          <button id="install-now">Install</button>
+          <button id="install-done">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Registered before Unity's own listeners, so an audio start that fails never reaches its
+      // fatal alert: it is not fatal, the next tap retries it.
+      function isAudioStartFailure(x) {
+        var m = x && (x.message || String(x));
+        return !!x && /audio/i.test(m || "");   // only audio: other errors still reach Unity's handler
+      }
+      window.addEventListener("unhandledrejection", function (e) {
+        if (isAudioStartFailure(e.reason)) { e.preventDefault(); e.stopImmediatePropagation(); }
+      }, true);
+      window.addEventListener("error", function (e) {
+        if (isAudioStartFailure(e.error || { message: e.message })) { e.preventDefault(); e.stopImmediatePropagation(); }
+      }, true);
+      // Every audio context the game makes, so at-work mode can silence them. Recorded from
+      // the start because the engine builds its own before anything else could ask for it.
+      var warAudio = [];
+      ["AudioContext", "webkitAudioContext"].forEach(function (name) {
+        var Real = window[name];
+        if (!Real) return;
+        var Wrapped = function (opts) {
+          var ctx = new Real(opts);
+          // A master volume between the engine and the speakers, so the page can bring sound back
+          // from silence after a hidden spell: sounds queued while hidden used to fire at once on
+          // return, a loud beat out of time with the music.
+          try {
+            var out = ctx.destination, master = ctx.createGain();
+            master.connect(out);
+            try { master.maxChannelCount = out.maxChannelCount; } catch (e) { }   // read by some engines off the destination
+            Object.defineProperty(ctx, "destination", { get: function () { return master; } });
+            ctx.warMaster = master;
+          } catch (e) { }
+          // iOS Safari rejects a resume with InvalidStateError while the page is hidden, before a
+          // tap, or while another app holds the audio. Unrejected, that reached Unity's fatal
+          // "An error occurred" dialog. A failed resume now means silence until the next tap.
+          //
+          // Every way back in goes through wake(): the master held at 0, the resume, and only once
+          // the context is truly running a 0.12s silent beat (for what the engine queued) and a
+          // 0.8s rise. A rejected resume used to ramp a still-suspended context to full, and the
+          // tap that later woke it played the queued sounds at full volume: the blip on return.
+          // While the page is away every resume is refused outright, the engine's own included,
+          // since one landing in iOS's moment after the switch was the beep over the other app.
+          // The context's own state changes are watched too: iOS wakes a context by itself after an
+          // interruption, and that wake has to rise from silence, or be put back to sleep if away.
+          try {
+            var realResume = ctx.resume.bind(ctx);
+            var gain = ctx.warMaster ? ctx.warMaster.gain : null;
+            var hold = function () {
+              if (!gain) return;
+              gain.cancelScheduledValues(0);
+              gain.value = 0;   // the setter, not only an event: on a suspended context an event waits for a render that has not happened
+              gain.setValueAtTime(0, ctx.currentTime);
+            };
+            var rise = function () {
+              if (!gain) return;
+              var now = ctx.currentTime, t = now + 0.12;
+              gain.cancelScheduledValues(0);
+              gain.value = 0;
+              gain.setValueAtTime(0, now);
+              gain.setValueAtTime(0, t);
+              gain.linearRampToValueAtTime(1, t + 0.8);
+            };
+            var away = function () {
+              return window.warAway === true || window.silent === true || document.visibilityState !== "visible";
+            };
+            var wake = function () {
+              if (away()) return Promise.resolve();
+              if (ctx.state === "running") return Promise.resolve();
+              hold();
+              return realResume().then(function () {
+                if (away()) { ctx.suspend(); return; }
+                if (ctx.state === "running") rise(); else armRetry();
+              }, function () { armRetry(); });
+            };
+            var retry = function () {
+              ["touchend", "pointerup", "keydown"].forEach(function (t) { window.removeEventListener(t, retry, true); });
+              wake();
+            };
+            var armRetry = function () {
+              ["touchend", "pointerup", "keydown"].forEach(function (t) { window.addEventListener(t, retry, true); });
+            };
+            ctx.addEventListener("statechange", function () {
+              if (ctx.state !== "running") { hold(); return; }
+              if (away()) { hold(); ctx.suspend(); }
+            });
+            ctx.warWake = wake;
+            ctx.warHold = hold;
+            ctx.warRise = rise;
+            // A suspended context may hold queued sound, so every resume of one is a wake.
+            ctx.resume = function () {
+              if (away()) return Promise.resolve();
+              if (ctx.state === "running") return realResume().catch(function () { });
+              return wake();
+            };
+          } catch (e) { }
+          warAudio.push(ctx);
+          return ctx;
+        };
+        Wrapped.prototype = Real.prototype;
+        window[name] = Wrapped;
+      });
+    </script>
+    <script>
+      var canvas  = document.querySelector("#unity-canvas");
+      var overlay = document.querySelector("#overlay");
+      var fill    = document.querySelector("#fill");
+      var sub     = document.querySelector("#sub");
+      // An iPad calls itself a Mac; a touch-screen laptop browser can report touch points too.
+      // A coarse pointer is what tells the tablet apart, so a Mac needs both.
+      var coarse = window.matchMedia && matchMedia("(pointer: coarse)").matches;
+      var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+                     || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform) && coarse);
+
+      // On a computer the game keeps a sideways phone's shape at whatever size fits the
+      // window, centred, so resizing the browser never reshapes it or asks to turn it.
+      var PhoneShape = 19.5 / 9;
+      function fitStage() {
+        var stage = document.querySelector("#stage");
+        if (!stage) return;
+        if (isMobile) { stage.style.cssText = ""; return; }
+        var w = window.innerWidth, h = window.innerHeight;
+        if (w / h > PhoneShape) w = h * PhoneShape; else h = w / PhoneShape;
+        stage.style.left = Math.round((window.innerWidth - w) / 2) + "px";
+        stage.style.top = Math.round((window.innerHeight - h) / 2) + "px";
+        stage.style.right = "auto"; stage.style.bottom = "auto";
+        stage.style.width = Math.round(w) + "px";
+        stage.style.height = Math.round(h) + "px";
+      }
+      fitStage();
+      window.addEventListener("resize", fitStage);
+
+      // iOS Safari cannot lock orientation, so an upright phone gets the #turn sheet. From
+      // 2026-10-16 the page drew the game turned a quarter instead, until iOS 26 (WebKit 301108)
+      // opened installed apps 62pt short now and then: fitting the short view left a strip, and
+      // sizing past it drew the game where iOS no longer sent the taps (2026-10-17). The sheet keeps
+      // every touch from the game; the audio listeners on window run first in capture, so a tap
+      // there still starts the music.
+      var turnSheet = document.querySelector("#turn");
+      function checkOrientation() {
+        document.documentElement.classList.toggle("upright", isMobile && window.innerHeight > window.innerWidth);
+      }
+      ["touchstart", "touchmove", "touchend", "touchcancel", "pointerdown", "pointermove", "pointerup",
+       "mousedown", "mousemove", "mouseup", "click", "dblclick", "contextmenu"].forEach(function (type) {
+        turnSheet.addEventListener(type, function (e) {
+          e.stopPropagation();
+          if (e.cancelable && type !== "touchend" && type !== "pointerup") e.preventDefault();
+        }, { passive: false });
+      });
+      // Landscape lock lives here rather than in MatchRunner's Awake, which used to set
+      // Screen.orientation. That call is screen.orientation.lock() underneath, and on a
+      // desktop it rejects — "not available on this device" — as an unhandled error on every
+      // single boot, which is noise in exactly the console you go to when something is wrong.
+      // The page already knows what a phone is, and can swallow the rejection. iOS Safari
+      // does not implement the API at all, which is what the #turn sheet above is for.
+      function lockLandscape() {
+        if (!isMobile || !screen.orientation || !screen.orientation.lock) return;
+        screen.orientation.lock("landscape").catch(function () { /* needs fullscreen, or unsupported */ });
+      }
+      lockLandscape();
+
+      window.addEventListener("resize", checkOrientation);
+      window.addEventListener("orientationchange", checkOrientation);
+      window.addEventListener("pageshow", checkOrientation);
+      if (window.visualViewport) visualViewport.addEventListener("resize", checkOrientation);
+      checkOrientation();
+
+      // Safari pinch-zooms the page otherwise, which fights the joystick.
+      document.addEventListener("gesturestart", function (e) { e.preventDefault(); }, { passive: false });
+      document.addEventListener("dblclick", function (e) { e.preventDefault(); }, { passive: false });
+
+      // Unity's canvas swallows contextmenu so that a game can use the right button. WAR only
+      // ever reads button 0 (grep GetMouseButton), so the menu costs nothing — and without it
+      // there is no right-click Inspect on the build, which is the first thing anyone reaches
+      // for when the page misbehaves. Stopped in the capture phase, before Unity's handler.
+      window.addEventListener("contextmenu", function (e) { e.stopPropagation(); }, true);
+
+      // Unity drives its main loop from requestAnimationFrame, which browsers stop firing in a
+      // hidden tab — so a match froze the instant you switched away, and Application.runInBackground
+      // cannot help, because it is the browser and not Unity that has stopped calling. Fall back
+      // to a timer while hidden. Browsers clamp background timers to roughly 1Hz, so the tab
+      // renders about once a second; MatchRunner banks wall-clock time rather than Time.deltaTime
+      // and catches the simulation up on each of those frames, so the match keeps real time
+      // instead of crawling. Must be installed before the loader script runs.
+      (function () {
+        var raf = window.requestAnimationFrame.bind(window);
+        window.requestAnimationFrame = function (cb) {
+          if (document.visibilityState === "visible") return raf(cb);
+          return window.setTimeout(function () { cb(performance.now()); }, 16);
+        };
+      })();
+
+      // A game canvas does not count as activity to the OS the way video does, so the phone
+      // dims and locks mid-match. The lock is dropped whenever the page is backgrounded and
+      // has to be taken again on the way back.
+      //
+      // The lock alone did not hold in the home-screen app (2026-10-17, screen locked mid-match):
+      // iOS before 18.4 grants it there and sleeps anyway. So iOS also plays a tiny muted video,
+      // which is what keeps a video page awake. WebKit lets a looping video sleep, so it jumps
+      // back by hand instead of looping, and it can only start from a touch.
+      var wakeLock = null, wakeVideo = null;
+      var iOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (isMobile && /Mac/.test(navigator.platform));
+      function keepAwake() {
+        if (document.visibilityState !== "visible") return;
+        if ("wakeLock" in navigator && !wakeLock) {
+          navigator.wakeLock.request("screen").then(function (lock) {
+            wakeLock = lock;
+            lock.addEventListener("release", function () { wakeLock = null; });
+          }).catch(function () { /* denied or unsupported; the video covers iOS */ });
+        }
+        if (!iOS) return;
+        if (!wakeVideo) {
+          wakeVideo = document.createElement("video");
+          wakeVideo.muted = true;
+          ["muted", "playsinline", "webkit-playsinline"].forEach(function (a) { wakeVideo.setAttribute(a, ""); });
+          wakeVideo.setAttribute("aria-hidden", "true");
+          wakeVideo.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;";
+          wakeVideo.src = "data:video/mp4;base64,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";
+          wakeVideo.addEventListener("timeupdate", function () { if (wakeVideo.currentTime > 1) wakeVideo.currentTime = 0.1; });
+          wakeVideo.addEventListener("ended", function () { wakeVideo.currentTime = 0; wakeVideo.play().catch(function () { }); });
+          document.body.appendChild(wakeVideo);
+        }
+        if (wakeVideo.paused) wakeVideo.play().catch(function () { /* needs a touch; the next one asks again */ });
+      }
+      document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "visible") keepAwake();
+      });
+      // Safari only grants either off a user gesture, so every touch checks both are still held.
+      ["pointerup", "touchend", "click"].forEach(function (t) {
+        document.addEventListener(t, function () { if (!wakeLock || (wakeVideo && wakeVideo.paused) || (iOS && !wakeVideo)) keepAwake(); }, true);
+      });
+      if (document.body) keepAwake(); else document.addEventListener("DOMContentLoaded", keepAwake);
+
+      // Stamped fresh every build. Appended to each asset URL so a reload is guaranteed to
+      // fetch the new build rather than whatever the browser or Unity's IndexedDB kept.
+      var BUILD = "20261017-225348";
+      var bust = "?v=" + encodeURIComponent(BUILD);
+
+      var buildUrl = "Build";
+      var config = {
+        arguments: [],
+        dataUrl: buildUrl + "/Web.data.unityweb" + bust,
+        frameworkUrl: buildUrl + "/Web.framework.js.unityweb" + bust,
+        codeUrl: buildUrl + "/Web.wasm.unityweb" + bust,
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "Suhas Kasireddy",
+        productName: "WAR",
+        productVersion: "20261017-225348",
+        // Phones are 3x DPI; rendering every one of those pixels costs more than it shows.
+        devicePixelRatio: isMobile ? Math.min(window.devicePixelRatio || 1, 2) : (window.devicePixelRatio || 1),
+      };
+
+      // ?photo=1 on a dev or local build (docs/PHOTO_MODE.md): at least 1920 pixels across, a buffer
+      // a capture can read at any moment, and no dev marks on the page. The game hides its own HUD.
+      var PHOTO = /[?&]photo=1/.test(location.search) && /\/dev\/|localhost|127\.0\.0\.1|\.local:|:879\d\//.test(location.href);
+      if (PHOTO) {
+        var cw = Math.max(1, canvas.getBoundingClientRect().width || window.innerWidth);
+        config.devicePixelRatio = Math.min(4, Math.max(2, 1920 / cw));
+        config.webglContextAttributes = { preserveDrawingBuffer: true };
+        document.documentElement.classList.add("photo");
+        var hide = document.createElement("style");
+        hide.textContent = "html.photo #devbadge, html.photo #devver, html.photo #devswitch, html.photo #update { display: none !important; }";
+        document.head.appendChild(hide);
+        // Saves the current frame through tools/photo.py, which writes it to .ship/<name>.png.
+        window.warPhoto = function (name) {
+          return fetch("http://127.0.0.1:8796/save?name=" + encodeURIComponent(name || "peek"),
+                       { method: "POST", body: canvas.toDataURL("image/png") })
+            .then(function (r) { return r.text(); });
+        };
+      }
+
+      // Nothing running inside the wasm can replace the wasm, so a new deploy needs a page
+      // reload. Offered rather than forced: reloading mid-fight would be worse than stale.
+      function watchForNewBuild() {
+        setInterval(function () {
+          fetch("version.json?t=" + Date.now(), { cache: "no-store" })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (v) {
+              if (!v || v.version === BUILD) return;
+              window.warNewerBuild = v.version;
+              var bar = document.getElementById("update");
+              if (bar) bar.style.display = "block";
+            })
+            .catch(function () { /* offline; try again next tick */ });
+        }, 60000);
+      }
+
+      // Feedback used to POST straight to a Discord webhook whose URL was published in
+      // playtest.json. A static site cannot keep a secret: the file is world-readable, a
+      // scraper found it, and #war-feedback filled up with Telegram adverts posted through
+      // it. Anything the browser can send with, anyone can send with.
+      //
+      // So the browser no longer holds a credential. It formats the report, puts it on the
+      // clipboard, and opens the channel for the player to paste into. One extra tap, and
+      // nothing worth stealing ships with the build. playtest.json now carries only a
+      // channel link, which is useless to anyone who is not already in the server.
+      var lastError = "";
+      window.addEventListener("error", function (e) {
+        lastError = String(e.message || "").slice(0, 300);
+      });
+
+      // Deliberately set up before Unity loads: a build that fails to start is exactly the
+      // one you most need a report about.
+      // A 90-character user-agent buried the actual comment. Only the phone and OS matter.
+      function shortDevice() {
+        var ua = navigator.userAgent;
+        var os = (ua.match(/(?:iPhone )?OS (\d+[._]\d+)/) || [])[1];
+        if (/iPad/.test(ua))    return "iPad" + (os ? " " + os.replace("_", ".") : "");
+        if (/iPhone/.test(ua))  return "iPhone" + (os ? " " + os.replace("_", ".") : "");
+        if (/Android/.test(ua)) return "Android" + ((ua.match(/Android (\d+(?:\.\d+)?)/) || [])[1] || "");
+        if (/Mac/.test(ua))     return "Mac";
+        if (/Windows/.test(ua)) return "Windows";
+        return "desktop";
+      }
+
+      // Unity cannot raise a keyboard on WebGL — there is no TouchScreenKeyboard on this
+      // player — so the name field is a real DOM input over the canvas, exactly like the
+      // report sheet below. Unity opens it through the jslib and the answer comes back by
+      // SendMessage; a cancel sends an empty string so the game always gets a reply and
+      // never sits waiting on one.
+      // Asks the browser to treat this origin's storage as persistent, which matters more
+      // here than it looks: the player's account token lives in IndexedDB (Unity's PlayerPrefs
+      // are backed by it on WebGL), and the server only ever keeps that token's hash. Evicted
+      // storage is not a logout, it is an account nobody can ever reach again.
+      //
+      // Chromium usually grants this to an installed or engaged site. **It does not save iOS
+      // Safari**, which deletes all script-writable storage after seven days of browser use
+      // without visiting the site; the only exemption there is being added to the home screen,
+      // which is what the in-game install prompt is for. Real recovery needs account binding.
+      if (navigator.storage && navigator.storage.persist) {
+        navigator.storage.persisted()
+          .then(function (already) { return already || navigator.storage.persist(); })
+          .then(function (granted) { window.warStoragePersisted = !!granted; })
+          .catch(function () { /* unsupported; nothing is worse than before */ });
+      }
+
+      // Account binding leaves the page and comes back. Two halves:
+      //
+      //  * warBeginLink navigates to Discord. Same tab on purpose - a popup is blocked on
+      //    mobile unless it is a direct gesture, and a blocked popup fails silently.
+      //  * the callback returns to this URL with ?link=<result>. It is stripped from the
+      //    address bar immediately so a refresh cannot replay a stale outcome, then handed
+      //    to Unity once it is up. Unity may not exist yet at page load, hence the retry.
+      window.warBeginLink = function (url) { window.location.href = url; };
+
+      // Sharing an invite. navigator.share opens the real share sheet on a phone, which is
+      // where the link is actually going - a chat with the friend being invited. Clipboard is
+      // the desktop fallback. Both are fire-and-forget: a refused share sheet is the player
+      // changing their mind, not an error worth reporting into the game.
+      window.warShareLink = function (url) {
+        if (navigator.share) {
+          navigator.share({ title: "WAR", text: "Come fight with me.", url: url })
+            .catch(function () { /* dismissed */ });
+          return;
+        }
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(url).catch(function () { /* blocked */ });
+        }
+      };
+
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var result = params.get("link");
+        var friend = params.get("friend");
+
+        // Signing in comes back on its own parameter, because linking and signing in mean
+        // different things to the game: one attaches a provider to the account being held, the
+        // other may replace it. A success carries a claim, which is worthless on its own —
+        // the token it buys is fetched over HTTPS and never travels in a URL.
+        var auth  = params.get("auth");
+        var claim = params.get("claim");
+        if (auth === "ok" && claim) auth = "ok|" + claim;
+
+        if (!result && !friend && !auth) return;
+
+        params.delete("link");
+        params.delete("friend");
+        params.delete("auth");
+        params.delete("claim");
+        var clean = window.location.pathname + (params.toString() ? "?" + params : "");
+        // Stripped before the game is even told, so a reload cannot redeem a claim twice and
+        // the secret is out of the address bar as early as it can be.
+        history.replaceState(null, "", clean);
+
+        var tries = 0;
+        var timer = setInterval(function () {
+          if (++tries > 40) { clearInterval(timer); return; }
+          if (!window.unityInstance) return;
+          try {
+            if (result) window.unityInstance.SendMessage("AccountService", "OnLinkResult", result);
+            if (auth)   window.unityInstance.SendMessage("AccountService", "OnAuthResult", auth);
+            if (friend) window.unityInstance.SendMessage("AccountService", "OnFriendCode", friend);
+            clearInterval(timer);
+          } catch (e) { /* not built yet; the next tick tries again */ }
+        }, 250);
+      })();
+
+      function setupNaming() {
+        var sheet  = document.getElementById("name-sheet");
+        var card   = document.getElementById("name-card");
+        var title  = card.querySelector("h3");
+        var blurb  = card.querySelector("p");
+        var input  = document.getElementById("name-input");
+        var save   = document.getElementById("name-save");
+        var cancel = document.getElementById("name-cancel");
+
+        // Where this answer goes. Set per open, because the sheet now asks more than one
+        // question: a name goes to Home, a transfer code goes to AccountService. Both objects
+        // are DontDestroyOnLoad, which is why the page can address them at all.
+        var target = "Home";
+        var method = "OnNameEntered";
+
+        function reply(value) {
+          document.body.classList.remove("naming");
+          // A cancel replies with an empty string rather than staying silent, so nothing in
+          // the game waits forever on an answer that is never coming.
+          if (window.unityInstance) window.unityInstance.SendMessage(target, method, value);
+        }
+
+        /**
+         * Opens the sheet with its words, its field and its destination.
+         *
+         * `opts` is optional so the original two-argument call still works — warOpenName is a
+         * contract with HomeView.OnNameEntered and the canvas name, per CLAUDE.md, and is not
+         * something to break for tidiness.
+         */
+        window.warOpenName = function (current, opts) {
+          var o = opts || {};
+          target = o.target || "Home";
+          method = o.method || "OnNameEntered";
+
+          title.textContent = o.title || "Your name";
+          blurb.textContent = o.blurb ||
+            "Shown on your profile. Letters, numbers, up to 16 characters.";
+          save.textContent = o.save || "Save";
+
+          input.value = current || "";
+          input.maxLength = o.maxLength || 16;
+          input.placeholder = o.placeholder || "Ash Warden";
+          // A code is typed from a screenshot or read aloud, so autocapitalise helps rather
+          // than fights; a name is words. Both want autocorrect off.
+          input.setAttribute("autocapitalize", o.upper ? "characters" : "words");
+          input.style.textTransform = o.upper ? "uppercase" : "none";
+          input.style.letterSpacing = o.upper ? "3px" : "normal";
+
+          document.body.classList.add("naming");
+          // Focused on purpose, unlike the report sheet: there is one field, the player
+          // asked for it, and the keyboard is the whole point. select() rather than focus()
+          // so typing replaces what is there instead of appending to it.
+          setTimeout(function () { input.focus(); input.select(); }, 30);
+        };
+
+        save.addEventListener("click", function () { reply(input.value); });
+        cancel.addEventListener("click", function () { reply(""); });
+        input.addEventListener("keydown", function (e) {
+          if (e.key === "Enter") { e.preventDefault(); reply(input.value); }
+          if (e.key === "Escape") { e.preventDefault(); reply(""); }
+        });
+        // Tapping the dimmed backdrop is cancel, which is what every sheet on a phone does.
+        sheet.addEventListener("click", function (e) { if (e.target === sheet) reply(""); });
+      }
+      setupNaming();
+
+      function setupFeedback() {
+        var sheet  = document.getElementById("report-sheet");
+        var text   = document.getElementById("report-text");
+        var send   = document.getElementById("report-send");
+        var cancel = document.getElementById("report-cancel");
+        var channelUrl = "";
+        var relayUrl = "";
+
+        fetch("playtest.json?t=" + Date.now(), { cache: "no-store" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (cfg) {
+            if (!cfg) return;
+            channelUrl = cfg.feedbackUrl || "";
+            relayUrl = cfg.feedbackApi || "";
+            // Either route is enough to show the button. The relay is one tap; the channel
+            // link is the paste fallback, and one of them has to exist for the button to
+            // do anything at all.
+            if (channelUrl || relayUrl) document.body.classList.add("can-report");
+          })
+          .catch(function () { /* no config published; button stays hidden */ });
+
+        // Clipboard access needs a secure context. The published build is https so the
+        // modern call works there; the wifi preview is plain http, where it does not, and
+        // the old execCommand path still does. If both fail the text stays in the box and
+        // the player copies it themselves — the report is never lost, only less convenient.
+        function copyText(value) {
+          if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(value);
+          }
+          return new Promise(function (resolve, reject) {
+            var scratch = document.createElement("textarea");
+            scratch.value = value;
+            scratch.setAttribute("readonly", "");
+            scratch.style.position = "fixed";
+            scratch.style.opacity = "0";
+            document.body.appendChild(scratch);
+            scratch.select();
+            scratch.setSelectionRange(0, value.length);
+            var ok = false;
+            try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+            document.body.removeChild(scratch);
+            ok ? resolve() : reject(new Error("copy unavailable"));
+          });
+        }
+
+        function close() {
+          document.body.classList.remove("reporting");
+          send.disabled = false;
+          send.textContent = "Send";
+        }
+
+        // Focused on a desktop and deliberately not on a phone: autofocusing there throws
+        // the on-screen keyboard over the sheet before the reader has seen it, while on a
+        // machine with a mouse a dialog you have to click into before typing is just a
+        // dialog with a step in it.
+        function open() {
+          text.value = "";
+          document.body.classList.add("reporting");
+          var desktop = window.matchMedia
+            && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+          if (desktop) setTimeout(function () { text.focus(); }, 0);
+        }
+        window.warOpenReport = open;   // called from Unity's in-game report button
+
+        // A desync reports itself. No sheet, no prompt, no retry: the match has already
+        // ended and the player is on their way back to the home screen, so this must never
+        // be something they wait for. If it fails it is lost, which is the right trade —
+        // the alternative is a dialog about a hash.
+        window.warReportDesync = function (json) {
+          if (!relayUrl) return;
+          var d;
+          try { d = JSON.parse(json); } catch (e) { return; }
+          fetch(relayUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              kind: "desync",
+              seed: d.seed || "",
+              build: BUILD,
+              device: shortDevice(),
+              room: d.room || "",
+              tick: d.tick || "",
+              slot: d.slot,
+              peer: d.peer,
+              mine: d.mine || "",
+              theirs: d.theirs || "",
+              players: d.players,
+            }),
+            keepalive: true,
+          }).catch(function () { /* lost, deliberately */ });
+        };
+
+        document.getElementById("report").addEventListener("click", open);
+
+        // Unity publishes match context every few seconds; while a match is live its own
+        // button is on screen, so the page one steps aside rather than double up.
+        setInterval(function () {
+          var ctx = window.warContext;
+          document.body.classList.toggle("in-match", !!(ctx && ctx.seed && !ctx.over));
+        }, 2000);
+        cancel.addEventListener("click", close);
+        sheet.addEventListener("click", function (e) { if (e.target === sheet) close(); });
+
+        send.addEventListener("click", function () {
+          var body = text.value.trim();
+          if (!body) return close();
+
+          var ctx = window.warContext || {};
+          var fields = {
+            comment: body,
+            champion: ctx.champion || "",
+            matchTime: ctx.gameTime
+              ? Math.floor(ctx.gameTime / 60) + "m" + (ctx.gameTime % 60) + "s" : "",
+            autoplay: !!ctx.autoplay,
+            over: !!ctx.over,
+            seed: ctx.seed || "",
+            build: BUILD,
+            device: shortDevice(),
+            error: lastError || "",
+          };
+
+          send.disabled = true;
+
+          // One tap when the relay is up. It holds the webhook; this page holds nothing.
+          if (relayUrl) {
+            send.textContent = "Sending…";
+            fetch(relayUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(fields),
+            })
+              .then(function (r) {
+                if (!r.ok) throw new Error(r.status);
+                send.textContent = "Sent — thanks";
+                setTimeout(close, 900);
+              })
+              .catch(function () { pasteFallback(fields); });
+            return;
+          }
+
+          pasteFallback(fields);
+        });
+
+        // The Discord app if it is installed, the web client if it is not. A channel link
+        // opened with window.open lands in a browser tab every time, which is the wrong
+        // client on both a phone and a desktop for anyone who has the app — and pasting
+        // into the web client means logging into it first.
+        //
+        // The scheme handler does not report success, so this races it: if the app takes
+        // over, the page goes hidden and the fallback is cancelled. If nothing answers,
+        // the tab opens a moment later.
+        function openChannel(url) {
+          var m = /discord\.com\/channels\/(\d+)\/(\d+)/.exec(url || "");
+          if (!m) { window.open(url, "_blank", "noopener"); return; }
+
+          var web = setTimeout(function () {
+            window.removeEventListener("blur", answered);
+            document.removeEventListener("visibilitychange", answered);
+            window.open(url, "_blank", "noopener");
+          }, 1400);
+
+          function answered() {
+            if (!document.hidden && document.hasFocus()) return;
+            clearTimeout(web);
+            window.removeEventListener("blur", answered);
+            document.removeEventListener("visibilitychange", answered);
+          }
+
+          window.addEventListener("blur", answered);
+          document.addEventListener("visibilitychange", answered);
+          window.location.href = "discord://-/channels/" + m[1] + "/" + m[2];
+        }
+
+        // Relay down, relay unconfigured, or offline. The report is never lost to a
+        // service being unreachable — it goes on the clipboard and the channel opens.
+        function pasteFallback(fields) {
+          if (!channelUrl) {
+            // Dev builds land here by design: devbrand.py blanks the config so a build
+            // being worked on cannot post into the channel playtesters read.
+            send.disabled = false;
+            send.textContent = "Reporting is off on this build";
+            return;
+          }
+
+          var meta = [
+            fields.champion, fields.matchTime,
+            fields.autoplay ? "autoplay" : "", fields.over ? "match over" : "",
+            "seed " + (fields.seed || "—"), fields.build, fields.device,
+          ].filter(Boolean);
+
+          var report = fields.comment + "\n-# " + meta.join("  ·  ");
+          if (fields.error) report += "\n`" + fields.error + "`";
+
+          copyText(report)
+            .then(function () {
+              send.textContent = "Copied — paste it in Discord";
+              openChannel(channelUrl);
+              setTimeout(close, 1200);
+            })
+            .catch(function () {
+              send.disabled = false;
+              send.textContent = "Copy it yourself, then paste in Discord";
+              text.value = report;
+              text.focus();
+              text.setSelectionRange(0, report.length);
+            });
+        }
+      }
+      setupFeedback();
+
+      // ------------------------------------------------------------ safe area
+
+      // A share of the screen per side (0 left, 1 bottom, 2 right, 3 top), for SafeArea.cs.
+      window.warSafeInset = function (side) {
+        var p = document.querySelector("#safe-probe");
+        var w = window.innerWidth, h = window.innerHeight;
+        if (!p || w <= 0 || h <= 0) return 0;
+        var r = p.getBoundingClientRect();
+        if (side === 0) return r.left / w;
+        if (side === 1) return (h - r.bottom) / h;
+        if (side === 2) return (w - r.right) / w;
+        return r.top / h;
+      };
+
+      // ------------------------------------------------------------ at work
+
+      // At work: the game dimmed, colours muted, for a screen that should not light up. ` or the
+      // half-moon switch (computers only, so it never takes a joystick touch). Sound is its own
+      // switch, Shift + ` or the speaker, because earbuds usually make it fine. Both remembered.
+      var atWork = false, silent = false;
+      try {
+        atWork = localStorage.getItem("war.atwork") === "1";
+        silent = localStorage.getItem("war.silent") === "1";
+      } catch (e) { }
+      var switches = null;
+      function applyAtWork() {
+        document.body.classList.toggle("at-work", atWork);
+        warAudio.forEach(function (ctx) {
+          try { if (silent || document.hidden) ctx.suspend(); else ctx.resume(); } catch (e) { }
+        });
+        if (switches) {
+          switches.dim.classList.toggle("on", atWork);
+          switches.sound.classList.toggle("on", silent);
+          switches.sound.classList.toggle("muted", silent);
+        }
+      }
+      function remember() {
+        try {
+          localStorage.setItem("war.atwork", atWork ? "1" : "0");
+          localStorage.setItem("war.silent", silent ? "1" : "0");
+        } catch (e) { }
+        applyAtWork();
+      }
+      // Dev and local only: they are the builds that carry the badge.
+      function devBuild() { return !!document.querySelector("#devbadge"); }
+      window.addEventListener("keydown", function (e) {
+        if (e.code !== "Backquote" || typingInto(e.target) || !devBuild()) return;
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (e.shiftKey) silent = !silent; else atWork = !atWork;
+        remember();
+      }, true);
+
+      function makeSwitch(title, svg, flip) {
+        var b = document.createElement("button");
+        b.type = "button"; b.title = title; b.setAttribute("aria-label", title);
+        b.innerHTML = svg;
+        b.addEventListener("click", function (e) { e.preventDefault(); flip(); remember(); b.blur(); canvas.focus({ preventScroll: true }); });
+        return b;
+      }
+      // The badge sits on the game, not the window: on a computer the game is a phone-shaped box
+      // with dark margins, and the at-work switches go in those margins because they are not the game.
+      function placeBadge() {
+        var tag = document.querySelector("#devbadge"), ver = document.querySelector("#devver");
+        var stage = document.querySelector("#stage");
+        if (!tag || !stage) return;
+        var r = stage.getBoundingClientRect();
+        var W = window.innerWidth, H = window.innerHeight;
+        var probe = document.querySelector("#safe-probe");
+        var p = probe ? probe.getBoundingClientRect() : { left: 0, bottom: H };
+        var side = Math.max(0, p.left), below = Math.max(0, H - p.bottom);
+        // On a computer the game is a phone-shaped box with dark margins, and full-width sheets
+        // (Settings) run their labels to its left edge. Where there is margin, the badge lives there.
+        var mBelow = H - r.bottom, mLeft = r.left;
+        var outside = side < 24 && (mBelow >= 26 || mLeft >= 34);
+        tag.classList.toggle("flat", outside && mBelow >= 26);
+        if (ver) ver.classList.toggle("flat", outside && mBelow >= 26);
+        if (outside && mBelow >= 26) {
+          var y = Math.round(r.bottom + Math.min(10, (mBelow - tag.offsetHeight) / 2));
+          tag.style.left = (r.left + 6) + "px";
+          tag.style.top = y + "px";
+          if (ver) {
+            ver.classList.remove("stacked");
+            ver.style.bottom = "auto";
+            ver.style.left = Math.round(r.left + 6 + tag.offsetWidth + 10) + "px";
+            ver.style.top = Math.round(y + (tag.offsetHeight - ver.offsetHeight) / 2) + "px";
+          }
+        } else if (outside) {
+          tag.style.left = Math.round((mLeft - tag.offsetWidth) / 2) + "px";
+          tag.style.top = (r.top + r.height * 0.54) + "px";
+          if (ver) {
+            ver.classList.add("stacked");
+            ver.style.bottom = "auto";
+            ver.style.top = Math.round(r.top + r.height * 0.54 + tag.offsetHeight / 2 + 6) + "px";
+            ver.style.left = Math.round((mLeft - ver.offsetWidth) / 2) + "px";
+          }
+        } else {
+          var strip = side >= 24 && below >= 14;
+          if (side >= 24) {
+            // A notched phone on its side. The screens only take half the side inset (SafeArea.cs),
+            // so the strip outside it is the one place no control lives: the tag goes there, below
+            // mid-height, where the Dynamic Island is not and the corner has not started curving.
+            tag.style.left = Math.max(0, Math.round((side - tag.offsetWidth) / 2)) + "px";
+            tag.style.top = Math.round(r.top + r.height * 0.76) + "px";
+          } else {
+            tag.style.left = r.left + "px";
+            tag.style.top = (r.top + r.height * 0.54) + "px";
+          }
+          if (ver) {
+            // In the home indicator's strip when there is one, under the tabs. Anywhere else the
+            // bottom-left corner is the tab bar, so the number runs down the left edge under the tag,
+            // the one strip every screen keeps clear, and the pair moves up if it would run off.
+            ver.classList.toggle("stacked", !strip);
+            if (strip) {
+              ver.style.top = "auto";
+              ver.style.left = (r.left + side) + "px";
+              ver.style.bottom = Math.round((below - ver.offsetHeight) / 2) + "px";
+            } else {
+              var th = tag.offsetHeight, vh = ver.offsetHeight, gap = 6;
+              // Inside the game (no side strip) the bottom 12% is home's tab bar and the joystick's row.
+              var floor = side >= 24 ? r.bottom - 6 : r.bottom - r.height * 0.12;
+              var start = Math.min(r.top + r.height * (side >= 24 ? 0.76 : 0.54) - th / 2, floor - th - gap - vh);
+              tag.style.top = Math.round(start + th / 2) + "px";
+              ver.style.bottom = "auto";   // the stylesheet's bottom would stretch it to the floor
+              ver.style.top = Math.round(start + th + gap) + "px";
+              ver.style.left = Math.round(parseFloat(tag.style.left) + (tag.offsetWidth - ver.offsetWidth) / 2) + "px";
+            }
+          }
+        }
+        clampOnScreen(tag, W, H);
+        if (ver) clampOnScreen(ver, W, H);
+        if (!switches) return;
+        var box = switches.box, bw = box.offsetWidth || 48, bh = box.offsetHeight || 22;
+        var under = H - r.bottom, beside = W - r.right;
+        box.style.left = box.style.right = box.style.top = box.style.bottom = box.style.flexDirection = "";
+        if (under >= bh + 8) {
+          box.style.right = (W - r.right + 10) + "px";
+          box.style.top = Math.round(r.bottom + Math.min(10, (under - bh) / 2)) + "px";
+        } else if (beside >= bw + 8) {
+          box.style.left = Math.round(r.right + Math.min(10, (beside - bw) / 2)) + "px";
+          box.style.bottom = (H - r.bottom + 10) + "px";
+        } else if (ver) {
+          // No margin (the window is the game's exact shape): in the left strip, under the number.
+          var vr = ver.getBoundingClientRect();
+          box.style.left = Math.round(vr.left) + "px";
+          box.style.top = Math.round(Math.min(vr.bottom + 6, r.bottom - bh - 4)) + "px";
+          box.style.flexDirection = "column";
+        }
+      }
+      // The game data in use, after the stamp: "20261017-150204 · data 0.2.0". Only where the
+      // stamp is drawn (dev and local); the game calls this whenever its data changes.
+      window.warShowDataPatch = function (patch) {
+        var v = document.querySelector("#devver");
+        if (!v) return;
+        if (!v.dataset.stamp) v.dataset.stamp = v.textContent;
+        v.textContent = patch ? v.dataset.stamp + " · data " + patch : v.dataset.stamp;
+        placeBadgeSoon();
+      };
+      // Whatever the arithmetic above decided, the badge never ends up where it cannot be seen.
+      function clampOnScreen(el, W, H) {
+        var x = parseFloat(el.style.left), y = parseFloat(el.style.top);
+        if (!isNaN(x)) el.style.left = Math.round(Math.max(0, Math.min(x, W - el.offsetWidth))) + "px";
+        if (!isNaN(y)) el.style.top = Math.round(Math.max(0, Math.min(y, H - el.offsetHeight))) + "px";
+      }
+      // iOS reports a resize before layout has settled after a turn or a reload, so a placement
+      // made then can be stale: place again once things have had a moment.
+      function placeBadgeSoon() {
+        placeBadge();
+        setTimeout(placeBadge, 250);
+        setTimeout(placeBadge, 1000);
+      }
+      // The badge is added at the end of the page, after this runs.
+      document.addEventListener("DOMContentLoaded", function () {
+        if (devBuild() && !isMobile) {
+          var box = document.createElement("div");
+          box.id = "devswitch";
+          var dim = makeSwitch("At work: dim the game ( ` )",
+            '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.5a6.5 6.5 0 0 1 0 13z" fill="currentColor"/></svg>',
+            function () { atWork = !atWork; });
+          var sound = makeSwitch("Sound on and off ( Shift + ` )",
+            '<svg viewBox="0 0 16 16"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path class="wave" d="M11 5.5a3.5 3.5 0 0 1 0 5" fill="none" stroke="currentColor" stroke-width="1.4"/><path class="cross" d="M11 6l4 4M15 6l-4 4" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
+            function () { silent = !silent; });
+          box.appendChild(dim); box.appendChild(sound);
+          document.body.appendChild(box);
+          switches = { box: box, dim: dim, sound: sound };
+        }
+        if (!devBuild()) { atWork = false; silent = false; }
+        applyAtWork();
+        placeBadgeSoon();
+        window.addEventListener("resize", placeBadgeSoon);
+        window.addEventListener("orientationchange", placeBadgeSoon);
+        if (window.visualViewport) visualViewport.addEventListener("resize", placeBadgeSoon);
+      });
+      // The engine may make or wake its audio after the switch was set; keep it quiet.
+      setInterval(function () { if (silent || document.hidden || warAway) warAudio.forEach(function (c) { if (c.state === "running") c.suspend(); }); }, 1000);
+      // Quiet while the tab is hidden, on every build. A hidden tab is woken about once a second and
+      // plays that second of match in one go, so its sounds came out bunched and half-dropped.
+      // Leaving: glide the master to silence (a hard step to 0 clicks), then suspend. iOS keeps a
+      // page running for a moment after the switch, which played a beep over the other app.
+      // Coming back: resume with the master held at 0 a beat, so whatever the engine queued while
+      // hidden lands silently, then bring it up over 0.8s. Whichever of blur, visibilitychange
+      // and pagehide comes first does the leaving; the others find it already done.
+      var warAway = false;   // read by the resume wrapper above, as window.warAway
+      var backSoon = 0, leftAt = 0, wentHidden = false;
+      function audioAway() {
+        clearTimeout(backSoon);
+        if (document.hidden) wentHidden = true;
+        if (warAway) return;
+        warAway = true;
+        leftAt = Date.now();
+        warAudio.forEach(function (ctx) {
+          try {
+            var g = ctx.warMaster ? ctx.warMaster.gain : null, t = ctx.currentTime;
+            if (g) { g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.setTargetAtTime(0, t, 0.006); }
+            setTimeout(function () { if (warAway) ctx.suspend(); }, 60);
+          } catch (e) { }
+        });
+      }
+      // Back only when the page is truly in front: iOS can fire focus or pageshow mid-switch while
+      // the page is still on its way out, and waking then was the beep over the other app. That
+      // stray focus comes within moments of the blur and before the page goes hidden, so on a
+      // touch screen a focus, pageshow or visible counts only once the page has really been hidden
+      // or a second has passed since leaving. Then it waits a quarter second, asks again, and
+      // tries a real resume: if iOS allows it, sound rises with no tap. If iOS refuses, the first
+      // tap does it. Waiting for a tap every time read as the music having stopped (2026-10-17).
+      var touchFirst = navigator.maxTouchPoints > 0;
+      function audioBack(e) {
+        var touched = e && (e.type === "pointerdown" || e.type === "touchstart" || e.type === "keydown");
+        if (touched) { comeBack(true); return; }
+        if (!warAway) return;
+        if (touchFirst && !wentHidden && Date.now() - leftAt < 1000) return;
+        clearTimeout(backSoon);
+        backSoon = setTimeout(function () { comeBack(false); }, 250);
+      }
+      function comeBack(touched) {
+        if (silent || document.visibilityState !== "visible") return;
+        // iOS does not reliably report focus on return, so a phone does without it.
+        if (!touched && !touchFirst && !document.hasFocus()) return;
+        if (!warAway) return;
+        warAway = false;
+        wentHidden = false;
+        warAudio.forEach(function (ctx) {
+          try { if (ctx.warWake) ctx.warWake(); else ctx.resume(); } catch (e) { }
+        });
+      }
+      function quietThenWake() { if (silent || document.hidden) audioAway(); else audioBack(); }
+      document.addEventListener("visibilitychange", quietThenWake);
+      window.addEventListener("pagehide", audioAway);
+      window.addEventListener("blur", audioAway);
+      window.addEventListener("pageshow", audioBack);
+      window.addEventListener("focus", audioBack);
+      window.addEventListener("pointerdown", audioBack, true);
+      window.addEventListener("touchstart", audioBack, true);
+      window.addEventListener("keydown", audioBack, true);
+      // iOS never lets a page make sound before the first touch, and that touch only counts once
+      // the finger lifts (touchend, pointerup), not as it lands. Every one of those wakes any
+      // context still asleep, whether or not an earlier resume was refused, so the first tap
+      // anywhere starts the music: a resume left pending by iOS never armed the retry.
+      function unlockAudio() {
+        if (warAway || silent || document.visibilityState !== "visible") return;
+        warAudio.forEach(function (ctx) {
+          try { if (ctx.state !== "running" && ctx.warWake) ctx.warWake(); } catch (e) { }
+        });
+      }
+      ["touchend", "pointerup", "click", "keydown"].forEach(function (t) { window.addEventListener(t, unlockAudio, true); });
+
+      // ------------------------------------------------------------ keyboard
+
+      // The game hears keys only while the canvas has focus, so anything else holding it —
+      // a page button, the badge, a click outside the tab — left every key dead until the
+      // canvas was clicked again. Focus goes back to it on load, on any press and on return,
+      // and a key that lands elsewhere is handed to it. Text fields keep their own keys.
+      function typingInto(el) {
+        return el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+      }
+      function focusGame() {
+        if (typingInto(document.activeElement)) return;
+        if (document.activeElement !== canvas) canvas.focus({ preventScroll: true });
+      }
+      window.addEventListener("pointerdown", function (e) {
+        if (!typingInto(e.target)) setTimeout(focusGame, 0);
+      }, true);
+      window.addEventListener("focus", focusGame);
+      ["keydown", "keyup"].forEach(function (kind) {
+        window.addEventListener(kind, function (e) {
+          if (e.target === canvas || typingInto(e.target) || e.warRelayed) return;
+          var copy = new KeyboardEvent(kind, e);
+          copy.warRelayed = true;
+          canvas.dispatchEvent(copy);
+          focusGame();
+        }, true);
+      });
+
+      // ------------------------------------------------------------ add to home screen
+
+      // Chrome on Android hands over a one-tap install prompt; keep it for the button.
+      var installPrompt = null;
+      window.addEventListener("beforeinstallprompt", function (e) {
+        e.preventDefault();
+        installPrompt = e;
+      });
+
+      function offerInstall() {
+        var installed = (window.matchMedia && matchMedia("(display-mode: standalone)").matches)
+                        || navigator.standalone === true;
+        // Every start on dev and local, by request. A player on prod is asked once a week at
+        // most, and never again after Done. Never once it already runs from the home screen.
+        if (!isMobile || installed) return;
+        var dev = !!document.querySelector("#devbadge");
+        try {
+          if (!dev && localStorage.getItem("war.install.done")) return;
+          if (!dev && Date.now() - Number(localStorage.getItem("war.install.later") || 0) < 7 * 24 * 3600 * 1000) return;
+        } catch (e) { }
+
+        var ios = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+                  || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform));
+        var name = document.title || "WAR";
+        document.querySelector("#install-title").textContent = "Add " + name + " to your home screen";
+
+        var steps;
+        if (ios) {
+          steps = [
+            "Tap the <b>Share</b> button (the square with an arrow) in your browser bar",
+            "Scroll down and tap <b>Add to Home Screen</b>",
+            "Tap <b>Add</b>, then open " + name + " from your home screen"
+          ];
+        } else if (installPrompt) {
+          steps = ["Tap <b>Install</b> below", "Open " + name + " from your home screen"];
+          document.querySelector("#install-now").style.display = "block";
+          document.querySelector("#install-done").style.display = "none";
+        } else {
+          steps = [
+            "Tap the <b>&#8942;</b> menu at the top right of Chrome",
+            "Tap <b>Add to Home screen</b> or <b>Install app</b>",
+            "Tap <b>Add</b>, then open " + name + " from your home screen"
+          ];
+        }
+        document.querySelector("#install-steps").innerHTML =
+          steps.map(function (t) { return "<li>" + t + "</li>"; }).join("");
+        document.body.classList.add("installing");
+      }
+
+      function closeInstall() { document.body.classList.remove("installing"); }
+      document.querySelector("#install-later").onclick = function () {
+        try { localStorage.setItem("war.install.later", String(Date.now())); } catch (e) { }
+        closeInstall();
+      };
+      document.querySelector("#install-done").onclick = function () {
+        try { localStorage.setItem("war.install.done", "1"); } catch (e) { }
+        closeInstall();
+      };
+      document.querySelector("#install-now").onclick = function () {
+        if (!installPrompt) return closeInstall();
+        installPrompt.prompt();
+        installPrompt.userChoice.then(function (c) {
+          installPrompt = null;
+          closeInstall();
+        });
+      };
+
+      function boot() {
+        var script = document.createElement("script");
+        script.src = buildUrl + "/Web.loader.js" + bust;
+        script.onload = function () {
+          createUnityInstance(canvas, config, function (progress) {
+            fill.style.width = (100 * progress) + "%";
+          }).then(function (unityInstance) {
+            overlay.style.display = "none";
+            placeBadgeSoon();
+            window.unityInstance = unityInstance;
+            watchForNewBuild();
+            focusGame();
+            setTimeout(offerInstall, 2500);
+          }).catch(function (message) {
+            // A download that fails partway is almost always a build being written over this one,
+            // on the machine serving it or on the site: its engine wall read like a crash.
+            var m = String(message || "");
+            console.error(m);
+            sub.textContent = /fetch|download|wasm|unityweb|network/i.test(m)
+              ? "A new version is being put in place. Reload in a minute."
+              : m;
+          });
+        };
+        document.body.appendChild(script);
+      }
+
+      // A stale shell against fresh binaries is a hard crash, not a stale game.
+      //
+      // This file is what the browser caches; the engine files under Build/ are requested with
+      // a version in the query string, so they miss the cache and arrive current. An old cached
+      // shell therefore loads *new* binaries with an old loader's expectations, and Unity dies
+      // on the spot with "memory access out of bounds" or a stack overflow — a wall of hex
+      // where the game should be. Seen twice while testing, both times after a deploy.
+      //
+      // watchForNewBuild covers the other direction: a page already running when a build lands
+      // is offered a reload rather than forced, because reloading mid-fight is worse than
+      // stale. It cannot help here, because here nothing gets far enough to poll.
+      //
+      // Reloads at most once per version. If version.json still disagrees after that, the game
+      // is booted anyway — a wrong build the player can quit beats a reload loop they cannot.
+      function bootWhenCurrent() {
+        fetch("version.json?t=" + Date.now(), { cache: "no-store" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (v) {
+            if (!v || !v.version || v.version === BUILD) return boot();
+            // Deliberately an ugly name. This marks "already reloaded once for this version",
+            // and a short one like `v` is exactly what a shared or hand-edited link carries by
+            // accident — which would silently disable the guard for whoever opened it.
+            var url = new URL(location.href);
+            if (url.searchParams.get("warshell") === v.version) return boot();
+            url.searchParams.set("warshell", v.version);
+            location.replace(url.toString());
+          })
+          .catch(boot);   // offline, or no version.json: play what is here
+      }
+
+      bootWhenCurrent();
+    </script>
+  </body>
+</html>
