@@ -1,0 +1,9 @@
+{
+  "version": "20261106-214300",
+  "sourceSha": "ec3dffeff-dirty",
+  "note": "",
+  "changes": "- fix(tools): history test copies the hero tag list beside history.py\n\ttools/history_test.py\n- docs: the hero change tag table in the ship skill\n\t.claude/skills/ship/SKILL.md\n\tdocs/DISCORD.md\n- fix: past hero changes show honest buff, rework and visual tags\n\ttools/ship-notes/20261017-194254.json\n\ttools/ship-notes/20261017-225348.json\n\ttools/ship-notes/20261019-015627.json\n\ttools/ship-notes/20261019-021638.json\n\ttools/ship-notes/20261020-112750.json\n\ttools/ship-notes/20261104-155300.json\n\ttools/ship-notes/20261104-215901.json\n\ttools/ship-notes/20261106-043516.json\n- feat: what's new shows new, rework and visual hero tags\n\tUnityProject/Assets/Scripts/Game/WhatsNewView.cs\n- chore(tools): one hero tag list with new, rework and visual, checked\n\ttools/announce.py\n\ttools/herotags.py\n\ttools/history.py\n\ttools/patchcard.py\n\ttools/ship.sh\n- docs: log prod build 20261106-212350\n\tdocs/PLAYTESTS.md\n- chore: keep the ship notes for 20261106-212350\n\ttools/ship-notes/20261106-212350.json",
+  "range": "51b0cf1e5..ec3dffeff-dirty",
+  "sizeMb": "40",
+  "builtAt": "2026-11-06T21:48:33Z"
+}

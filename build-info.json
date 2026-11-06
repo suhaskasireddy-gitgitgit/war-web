@@ -1,0 +1,9 @@
+{
+  "version": "20261106-212350",
+  "sourceSha": "51b0cf1e5-dirty",
+  "note": "",
+  "changes": "- fix: you show offline to friends as soon as you leave or lock your phone\n\tUnityProject/Assets/Plugins/WebGL/Presence.jslib\n\tUnityProject/Assets/Scripts/Game/AccountService.cs\n- fix: an invite to a friend who goes offline no longer holds a lobby seat\n\tUnityProject/Assets/Scripts/Game/LobbyView.cs\n- fix: friends who are offline can no longer be invited to your party\n\tUnityProject/Assets/Scripts/Game/FriendsPanel.cs\n- feat: offline, home and the lobby show only what you can play\n\tUnityProject/Assets/Plugins/WebGL/Playtest.jslib\n\tUnityProject/Assets/Scripts/Game/AccountService.cs\n\tUnityProject/Assets/Scripts/Game/Connection.cs\n\tUnityProject/Assets/Scripts/Game/Connection.cs.meta\n\tUnityProject/Assets/Scripts/Game/HomeView.cs\n\tUnityProject/Assets/Scripts/Game/LobbyView.cs\n\tUnityProject/Assets/Scripts/Game/MatchRunner.cs\n- feat: the web game opens with no connection, from its last copy\n\tUnityProject/Assets/WebGLTemplates/MobileWeb/index.html\n\tUnityProject/Assets/WebGLTemplates/MobileWeb/sw.js\n\tUnityProject/Assets/WebGLTemplates/MobileWeb/sw.js.meta\n- docs: log prod build 20261106-202150\n\tdocs/PLAYTESTS.md\n- chore: keep the ship notes for 20261106-202150\n\ttools/ship-notes/20261106-202150.json",
+  "range": "a66389a9c..51b0cf1e5-dirty",
+  "sizeMb": "40",
+  "builtAt": "2026-11-06T21:29:45Z"
+}
