@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <title>WAR</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b0e14; color: #c9ced8; }
+    body { display: flex; align-items: center; justify-content: center; font: 600 16px/1.4 system-ui, sans-serif; }
+    a { color: #e8c374; }
+  </style>
+</head>
+<body>
+  <p id="note">WAR has a new address. Taking you there&hellip;</p>
+  <script>
+    // WAR moved to Cloudflare on 2026-11-12 (tools/play-worker/README.md). This page is what the old GitHub Pages
+    // address serves now, at / and at /dev/: it reads the accounts this browser holds here and carries them to the
+    // same folder at the new address in the URL fragment, which no server ever sees and the new page strips at once.
+    //
+    // Unity keeps PlayerPrefs in IndexedDB "/idbfs" as one binary file per folder, at /idbfs/<md5 of the folder's URL
+    // without its trailing slash>/PlayerPrefs (read off a real dev guest, 2026-11-12). Only war.* keys travel, not the
+    // game data package (re-downloaded anyway), and only when there is an account to carry.
+    (function () {
+      var NEW = "https://war-play.suhaskasireddy.workers.dev";
+      var OLD_ROOT = "/war-web";
+
+      var dir = location.pathname.replace(/[^/]*$/, "");
+      var sub = dir.indexOf(OLD_ROOT + "/") === 0 ? dir.slice(OLD_ROOT.length) : "/";
+      var params = new URLSearchParams(location.search);
+      var asked = params.get("back") === "1";
+      params.delete("back");
+      params.delete("warshell");
+      var query = params.toString();
+      var target = NEW + sub + (query ? "?" + query : "");
+      var doneKey = "war.moved:" + dir;
+      document.getElementById("note").innerHTML = 'WAR has a new address. Taking you to <a href="' + target + '">' + NEW.replace("https://", "") + "</a>&hellip;";
+
+      var gone = false;
+      function go(payload) {
+        if (gone) return;
+        gone = true;
+        try { if (payload) localStorage.setItem(doneKey, String(Date.now())); } catch (e) {}
+        location.replace(target + "#war-move=" + (payload || "none"));
+      }
+      // Whatever goes wrong below, the player is never left on this page.
+      setTimeout(function () { go(null); }, 5000);
+
+      // Carried once on an ordinary visit; again whenever the new address asks (?back=1), which it does only on a
+      // first visit with nothing handed over: a cleared browser, or a player who went straight to the new link.
+      var handed = false;
+      try { handed = !!localStorage.getItem(doneKey); } catch (e) {}
+
+      tidy().then(function () { return handed && !asked ? null : readPrefs(); })
+        .then(function (entries) { go(entries ? encode(entries) : null); }, function () { go(null); });
+
+      // The old offline copy: up to 40MB of a build this address no longer serves.
+      function tidy() {
+        var jobs = [];
+        if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations)
+          jobs.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
+            return Promise.all(regs.filter(function (r) { return new URL(r.scope).pathname === dir; })
+              .map(function (r) { return r.unregister(); }));
+          }));
+        if (window.caches)
+          jobs.push(caches.keys().then(function (names) {
+            return Promise.all(names.filter(function (n) { return n.indexOf("war|" + dir + "|") === 0; })
+              .map(function (n) { return caches.delete(n); }));
+          }));
+        var all = Promise.all(jobs).catch(function () {});
+        return Promise.race([all, new Promise(function (r) { setTimeout(r, 1000); })]);
+      }
+
+      function readPrefs() {
+        var path = "/idbfs/" + md5(location.origin + dir.replace(/\/$/, "")) + "/PlayerPrefs";
+        return new Promise(function (done) {
+          var req;
+          try { req = indexedDB.open("/idbfs"); } catch (e) { return done(null); }
+          // No database here at all: never played in this browser. Opening must not create one.
+          req.onupgradeneeded = function () { req.transaction.abort(); };
+          req.onerror = function () { done(null); };
+          req.onsuccess = function () {
+            var db = req.result;
+            if (!db.objectStoreNames.contains("FILE_DATA")) { db.close(); return done(null); }
+            var get = db.transaction("FILE_DATA").objectStore("FILE_DATA").get(path);
+            get.onerror = function () { db.close(); done(null); };
+            get.onsuccess = function () {
+              db.close();
+              var file = get.result;
+              if (!file || !file.contents) return done(null);
+              var entries;
+              try { entries = parsePrefs(new Uint8Array(file.contents)); } catch (e) { return done(null); }
+              var carried = entries.filter(function (e) {
+                return e.k.indexOf("war.") === 0 && e.k !== "war.gamedata.package" &&
+                  e.k.indexOf("war.account.local.") !== 0 && !(e.t === "s" && e.s.length > 8192);
+              });
+              var hasAccount = carried.some(function (e) { return e.k === "war.account.sessions" && e.s; });
+              done(hasAccount ? carried : null);
+            };
+          };
+        });
+      }
+
+      // "UnityPrf" and 8 bytes of header, then key, value, key, value. A length is one byte below 0x80, or 0x80 and
+      // an int32. A value is a string (its length first), 0xFE and an int32, or 0xFD and a float32. Little-endian.
+      function parsePrefs(b) {
+        var magic = String.fromCharCode.apply(null, b.subarray(0, 8));
+        if (magic !== "UnityPrf") throw new Error("not PlayerPrefs");
+        var view = new DataView(b.buffer, b.byteOffset, b.byteLength);
+        var utf8 = new TextDecoder();
+        var i = 16, out = [];
+        function len() {
+          var t = b[i++];
+          if (t < 0x80) return t;
+          if (t !== 0x80) throw new Error("length " + t);
+          var n = view.getInt32(i, true); i += 4; return n;
+        }
+        function text() { var n = len(); var s = utf8.decode(b.subarray(i, i + n)); i += n; return s; }
+        while (i < b.length) {
+          var k = text();
+          var t = b[i];
+          if (t === 0xFE) { out.push({ t: "i", k: k, i: view.getInt32(i + 1, true) }); i += 5; }
+          else if (t === 0xFD) { out.push({ t: "f", k: k, f: view.getFloat32(i + 1, true) }); i += 5; }
+          else out.push({ t: "s", k: k, s: text() });
+        }
+        return out;
+      }
+
+      function encode(entries) {
+        var bytes = new TextEncoder().encode(JSON.stringify({ v: 1, prefs: entries }));
+        var s = "";
+        for (var j = 0; j < bytes.length; j++) s += String.fromCharCode(bytes[j]);
+        return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+      }
+
+      // RFC 1321, for the folder's file name only. Web Crypto has no MD5.
+      function md5(str) {
+        var data = new TextEncoder().encode(str);
+        var n = ((data.length + 8) >> 6) + 1, w = new Int32Array(n * 16);
+        for (var j = 0; j < data.length; j++) w[j >> 2] |= data[j] << ((j % 4) * 8);
+        w[data.length >> 2] |= 0x80 << ((data.length % 4) * 8);
+        w[n * 16 - 2] = data.length * 8;
+        var S = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21], K = [];
+        for (j = 0; j < 64; j++) K[j] = (Math.abs(Math.sin(j + 1)) * 4294967296) | 0;
+        var a0 = 0x67452301, b0 = 0xefcdab89 | 0, c0 = 0x98badcfe | 0, d0 = 0x10325476;
+        for (var o = 0; o < w.length; o += 16) {
+          var A = a0, B = b0, C = c0, D = d0;
+          for (j = 0; j < 64; j++) {
+            var F, g, r = j >> 4;
+            if (r === 0) { F = (B & C) | (~B & D); g = j; }
+            else if (r === 1) { F = (D & B) | (~D & C); g = (5 * j + 1) % 16; }
+            else if (r === 2) { F = B ^ C ^ D; g = (3 * j + 5) % 16; }
+            else { F = C ^ (B | ~D); g = (7 * j) % 16; }
+            var x = (A + F + K[j] + w[o + g]) | 0, s = S[r * 4 + (j % 4)];
+            A = D; D = C; C = B; B = (B + ((x << s) | (x >>> (32 - s)))) | 0;
+          }
+          a0 = (a0 + A) | 0; b0 = (b0 + B) | 0; c0 = (c0 + C) | 0; d0 = (d0 + D) | 0;
+        }
+        var hex = "";
+        [a0, b0, c0, d0].forEach(function (v) {
+          for (var q = 0; q < 4; q++) hex += ("0" + ((v >>> (q * 8)) & 255).toString(16)).slice(-2);
+        });
+        return hex;
+      }
+    })();
+  </script>
+</body>
+</html>
